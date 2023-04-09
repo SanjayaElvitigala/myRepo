@@ -1,5 +1,6 @@
 import random
 from generic_files.config import *
+from generic_files.utility_functions import *
 from copy import deepcopy
 
 
@@ -7,20 +8,20 @@ from copy import deepcopy
 class Hotel:
   
   def __init__(self, simulationtime, input_room_list,id):
-    segment_counts  = {segment : [0 for i in range(simulationtime)] for segment in customer_segments}  # having a separate list to count customers by segment and by room type
-    self.total_customers = {type_of_room: deepcopy(segment_counts) for type_of_room in room_type.keys()}         # for each room type segment wise counts will be tracked
-    self.converted_customers = {type_of_room: deepcopy(segment_counts) for type_of_room in room_type.keys()}
-    self.room_price_records = {type_of_room: deepcopy(segment_counts) for type_of_room in room_type.keys()}
+    lead_day_counts  = {lead_day : [0 for i in range(simulationtime)] for lead_day in lead_time_days} # having a separate list to count customers by segment and by room type
+    self.total_customers = {type_of_room: deepcopy(lead_day_counts) for type_of_room in room_type.keys()}         # for each room type segment wise counts will be tracked
+    self.converted_customers = {type_of_room: deepcopy(lead_day_counts) for type_of_room in room_type.keys()}
+    self.room_price_records = {type_of_room: deepcopy(lead_day_counts) for type_of_room in room_type.keys()}
 
     self.booked_customers = [0 for day in range(simulationtime)]
     self.failed_customers = [0 for day in range(simulationtime)]
     self.target_ROI_margin = 0.4 # 40 percent ROI margin
     self.target_conversion_rate  = 0.1 # 20 percent conversion rate
-    self.last_action_taken = {type_of_room: {segment : 0 for segment in customer_segments} for type_of_room in room_type.keys() }
+    self.last_action_taken = {type_of_room: {lead_day : 0 for lead_day in lead_time_days} for type_of_room in room_type.keys() }
     self.daily_cost = hotel_daily_cost
     self.daily_customers = 0
     self.name = 'hotel_'+str(id)
-    self.per_day_profit= {type_of_room: {segment : 0 for segment in customer_segments} for type_of_room in room_type.keys() }
+    self.per_day_profit= {type_of_room: {lead_day: 0 for lead_day in lead_time_days}for type_of_room in room_type.keys() }
     # making room type count as instance variable
     for i,j in zip(room_type,input_room_list): 
       name_room_count=i+'_count'
@@ -36,11 +37,11 @@ class Hotel:
       name_room_st_price = i+'_st_price'
 
       price=random.randint(room_type[i]['price'][0],room_type[i]['price'][1])
-      price_by_segment = {segment:price  for segment in customer_segments}
+      price_by_lead_day = {lead_day : price for lead_day in lead_time_days}
       schedule= [getattr(self,name_room_count) for i in range(simulationtime+15)]
       cost=room_type[i]['cost']
       setattr(self, name_room_st_price, price)
-      setattr(self, name_room_price, price_by_segment)
+      setattr(self, name_room_price, price_by_lead_day)
       setattr(self, name_room_schedule, schedule)
       setattr(self, name_room_cost, cost)
       self.local=locals()
@@ -50,12 +51,12 @@ class Hotel:
   def set_price(self, actions):
     for type_of_room in room_type:
         room_price = type_of_room + '_price'
-        price_by_segment = {}
-        for segment in customer_segments:
-          selected_action = actions[type_of_room][segment]
-          self.last_action_taken[type_of_room][segment] = selected_action
-          price_by_segment[segment] = getattr(self,room_price)[segment]*selected_action
-        setattr(self, room_price, price_by_segment)
+        price_by_lead_day = {}
+        for lead_day in lead_time_days:
+            selected_action = actions[type_of_room][lead_day]
+            self.last_action_taken[type_of_room][lead_day] = selected_action
+            price_by_lead_day[lead_day] = getattr(self,room_price)[lead_day]*selected_action
+        setattr(self, room_price, price_by_lead_day)
 
   def update_room_schedule(self, customer):
     checkIn = customer.stay_day 
@@ -87,9 +88,10 @@ class Hotel:
     else:
       return True
 
-  def check_price_feasibility(self, customer): 
+  def check_price_feasibility(self, customer):
+      booking_gap = get_booking_gap_bin(customer.booking_gap)
       name_room_price=customer.type+'_price'
-      room_price_check = True if (getattr(self,name_room_price)[customer.segment]) <= customer.room_value else False
+      room_price_check = True if (getattr(self,name_room_price)[booking_gap]) <= customer.room_value else False
       return room_price_check
    
 

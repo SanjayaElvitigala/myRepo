@@ -4,7 +4,6 @@ import numpy as np
 import holidays
 import datetime
 from st_aggrid import AgGrid
-import streamlit as st
 
 
 from generic_files.config import *
@@ -32,17 +31,12 @@ def prepare_dataframes(simulation_time,year_customers, hotel_obj,timesteps):
     customer_df = pd.DataFrame(customer_data)
 
     mydataframe = pd.DataFrame()
-    for index in customer_df.index:
-        if  (customer_df.cancelled[index]!=1) &(customer_df.hotel_name[index]==hotel_obj.name):
-            new_row=customer_df.loc[index]
-            for day in range(customer_df['stay_day'][index],customer_df['stay_day'][index] + customer_df['length_of_stay'][index] + 1):
-                new_row['stay_day']=day   # increasing the initial stay_day within the stay duration                                                      
-                mydataframe = pd.concat([mydataframe, new_row.to_frame().T], ignore_index=True)
+    mydataframe = customer_df.loc[customer_df.index.repeat(customer_df['length_of_stay'])].reset_index(drop=True)
     mydataframe['Profit']=0
     mydataframe['hotel_price'] = mydataframe.get('hotel_price', np.nan)
     mydataframe['room_type'] = mydataframe.get('room_type', np.nan)
     mydataframe['booking_status'] = mydataframe.get('booking_status', np.nan)
-    mydataframe['stay_day'] = mydataframe.get('stay_day', [i for i in range(simulation_time+15)])
+    mydataframe['stay_day'] = mydataframe.get('stay_day', [i for i in range(simulation_time+leadtime_up_lim)])
     name_room_profit_list=[]
     for i in room_type.keys():
         name_room_cost =i+'_cost'
@@ -57,7 +51,7 @@ def prepare_dataframes(simulation_time,year_customers, hotel_obj,timesteps):
     Cust_grpby = mydataframe[['stay_day', 'hotel_price', 'Profit']+name_room_profit_list].groupby('stay_day').sum(numeric_only=False).reset_index()
     Cust_grpby.rename(columns={ 'hotel_price':'Daily_Revenue'},inplace=True)
     df = pd.DataFrame()
-    df['stay_day'] = [i for i in range(simulation_time+15)] 
+    df['stay_day'] = [i for i in range(simulation_time+leadtime_up_lim)] 
     df['no_of_rooms']=0
     df['total_no_of_booked_rooms']=0
     for i in room_type.keys():
@@ -85,9 +79,22 @@ def prepare_dataframes(simulation_time,year_customers, hotel_obj,timesteps):
 
     metrics_df = df
     # making a dataframe for room price records
-    hotel_room_price_records = pd.DataFrame()
-    for type_of_room in room_type.keys():
-        hotel_room_price_records[type_of_room]=hotel_obj.room_price_records[type_of_room]
+    if hotel_obj.is_segment_pricing:
+        price_record_cols = [type_of_room+'_price' for type_of_room in room_type]
+        price_record_cols.append('segment')
+        hotel_room_price_records = pd.DataFrame( columns= price_record_cols)
+
+        for day in range(simulation_time):
+            for segment in customer_segments:
+                row_dict = {type_of_room+'_price' : hotel_obj.room_price_records[type_of_room][segment][day] for type_of_room in room_type}
+                row_dict['segment'] = segment
+                row_dict['day'] = day
+                row = pd.Series(row_dict)
+                hotel_room_price_records = pd.concat([hotel_room_price_records, row.to_frame().T], ignore_index=True)
+    else:
+        hotel_room_price_records = pd.DataFrame()
+        for type_of_room in room_type.keys():
+            hotel_room_price_records[type_of_room]=hotel_obj.room_price_records[type_of_room]
 
     booking_rec_df = pd.DataFrame({'Day' : timesteps, 
                                    'failed_Customers'  : hotel_obj.failed_customers, 
@@ -103,10 +110,10 @@ def prepare_dataframes(simulation_time,year_customers, hotel_obj,timesteps):
 
     return [customer_df ,metrics_df,booking_rec_df,booking_rec_df_melt,multi_hotels_stat,hotel_room_price_records]
 
-def summarize_metrics(hotel_obj,type_of_room,time_step):
-    conv_cust = hotel_obj.converted_customers[type_of_room][time_step] 
-    tot_cust = hotel_obj.total_customers[type_of_room][time_step]
-    room_price = getattr(hotel_obj, (type_of_room + '_price'))
+def summarize_metrics(hotel_obj,type_of_room,time_step, segment = None):
+    conv_cust = hotel_obj.converted_customers[type_of_room][time_step] if (segment is None) else hotel_obj.converted_customers[type_of_room][segment][time_step] 
+    tot_cust = hotel_obj.total_customers[type_of_room][time_step] if (segment is None) else hotel_obj.total_customers[type_of_room][segment][time_step] 
+    room_price = getattr(hotel_obj, (type_of_room + '_price')) if (segment is None) else getattr(hotel_obj, (type_of_room + '_price'))[segment]
     st_room_price = getattr(hotel_obj, (type_of_room + '_st_price'))
     room_cost = getattr(hotel_obj, (type_of_room + '_cost'))
     profit_per_room = (room_price - room_cost) if (room_price - room_cost)>0 else 0
@@ -164,18 +171,34 @@ def model_comparison(ppo_rl_df,q_learning_rl_df,DQN_rl_df,base_df):
     model_comparison_df.fillna(0, inplace=True)
     return model_comparison_df
 
+def model_comparison_seg(DQN_seg_rl_df,DQN_rl_df,base_df):
+    model_comparison_df=pd.DataFrame(columns=['Room_type',
+                                              'DQN_seg_agent_mean_occupancy_Rate','DQN_agent_mean_occupancy_Rate','Base_model_mean_occupancy_Rate',
+                                              'DQN_seg_agent_mean_profit', 'DQN_agent_mean_profit', 'Base_model_mean_profit',
+                                              'DQN_seg_agent_mean_revenue','DQN_agent_mean_revenue', 'Base_model_mean_revenue',
+
+                                            ])
+    for name_room in room_type:
+        model_comparison_df.loc[len(model_comparison_df.index)] = [name_room, DQN_seg_rl_df[1][name_room+'_occupancy'].mean(),DQN_rl_df[1][name_room+'_occupancy'].mean(), base_df[1][name_room+'_occupancy'].mean(),
+                                                     DQN_seg_rl_df[1][name_room+'_profit'].mean(),DQN_rl_df[1][name_room+'_profit'].mean(), base_df[1][name_room+'_profit'].mean(),
+                                                     DQN_seg_rl_df[1][name_room+'_revenue'].mean(),DQN_rl_df[1][name_room+'_revenue'].mean(), base_df[1][name_room+'_revenue'].mean()]
+    model_comparison_df.loc[len(model_comparison_df.index)]=[ 'Total', DQN_seg_rl_df[1]['Occupancy_rate'].mean(),DQN_rl_df[1]['Occupancy_rate'].mean(),base_df[1]['Occupancy_rate'].mean(),
+                                                    DQN_seg_rl_df[1]['Profit'].mean(),DQN_rl_df[1]['Profit'].mean(),base_df[1]['Profit'].mean(),
+                                                    DQN_seg_rl_df[1]['Daily_Revenue'].mean(),DQN_rl_df[1]['Daily_Revenue'].mean(),base_df[1]['Daily_Revenue'].mean()]
+    model_comparison_df.fillna(0, inplace=True)
+    return model_comparison_df
+
 def create_holiday_dataframe(start_date, end_date,weekend_weight):
     gap =end_date - start_date
     number_of_days = gap.days
-    h_cols = ['date','description','holiday', 'day'] # columns of the holiday df
+    h_cols = ['date','description','holiday','customer_build_up', 'day'] # columns of the holiday df
 
-    segment_weekday_weights = {}
-    segment_weekend_weights = {}
-    segment_holiday_default_weights = {}
-    segment_weekend_and_holiday_weights = {}
+    # segment wise weights (extra expected number of customers depending on the classification of the day)
+    weekday_weights = {}
+    weekend_weights = {}
     for segment in customer_segments:
-        segment_weekday_weights[segment] =0
-        segment_weekend_weights[segment] =weekend_weight
+        weekday_weights[segment] =0
+        weekend_weights[segment] =weekend_weight
         h_cols.append(segment)
 
     holiday_df = pd.DataFrame(columns=h_cols)
@@ -189,15 +212,24 @@ def create_holiday_dataframe(start_date, end_date,weekend_weight):
         is_holiday = current_date in US_holidays
         holiday_str = US_holidays.get(current_date) if is_holiday else 'no'
 
-        row_dict = {'date': current_date, 'description':isweekday_str, 'holiday': holiday_str, 'day': current_day}
         if is_holiday:
-            for segment in customer_segments:
-                segment_holiday_default_weights[segment] = random.choice([0,1,2])
-                segment_weekend_and_holiday_weights[segment] = random.choice([0,1,2])+weekend_weight
-    
-            weights = segment_holiday_default_weights if current_date.weekday()<5 else segment_weekend_and_holiday_weights
+            build_up_days = random.randint(1,2) # if holiday, then build up can happen 1 to 2 days prior to the holiday
         else:
-            weights = segment_weekday_weights if current_date.weekday()<5 else segment_weekend_weights
+            build_up_days = 0 if current_date.weekday()<5 else random.randint(0,1) #if its a weekday no build up is happening, but if weekend then it can be from 0 to 1 day build up prior to weekend
+
+
+        row_dict = {'date': current_date, 'description':isweekday_str, 'holiday': holiday_str,'customer_build_up':build_up_days,  'day': current_day}
+
+    
+        if is_holiday:
+            if current_date.weekday()<5:
+                weights = {seg:random.choice([0,1,2,3]) for seg in customer_segments}
+            else:
+                weights = {}
+                for segment in customer_segments:
+                    weights[segment] = random.choice([0,1,2,3]) + weekend_weights[segment] # random component is for the expected number of cust for the particular segment for that holiday
+        else:
+            weights = weekday_weights if current_date.weekday()<5 else weekend_weights
 
         row_dict.update(weights)
         row = pd.Series(row_dict)
@@ -205,14 +237,15 @@ def create_holiday_dataframe(start_date, end_date,weekend_weight):
 
         holiday_df['day_index'] = holiday_df.index
         simulation_days = list(holiday_df['day_index'])
-    return [holiday_df,simulation_days,number_of_days]
+    holiday_df.to_csv('generic_files/h_df.csv')
+    return [simulation_days,number_of_days]
 
 def process_holiday_dataframe(holiday_df):
-
     # column aggrid definitions
     cols_def = [{"headerName": "date", "field": "date","editable": False},
                 {"headerName": "description", "field": "description","editable": False},
-                {"headerName": "holiday", "field": "holiday","editable": False}]
+                {"headerName": "holiday", "field": "holiday","editable": False},
+                {"headerName": "customer_build_up", "field": "customer_build_up","editable": True}]
 
     for segment in customer_segments:
         cols_def.append({"headerName": segment, "field": segment, "editable": True})
@@ -227,6 +260,26 @@ def process_holiday_dataframe(holiday_df):
         current_date = inputs_df.iloc[index]['date']
         for segment in customer_segments:
             segment_value = inputs_df.iloc[index][segment]
-            holiday_df[segment][(pd.to_datetime(holiday_df['date']) == current_date)] = segment_value
+            holiday_df.loc[(pd.to_datetime(holiday_df['date']) == current_date), segment]= segment_value
+    
+    holiday_df.to_csv('generic_files/h_df.csv')
 
-    return holiday_df
+def unpack_reward(nested_reward_dict):
+    reward = 0
+    for key1, value1 in nested_reward_dict.items():
+        for key2,value2 in value1.items():
+            reward+=value2
+    return reward
+
+def segment_room_type_label_encoder(segment_input ,type_of_room_input):
+    segment_indicator = []
+    type_of_room_indicator = []
+
+    for segment in customer_segments:
+        if segment==segment_input:
+            segment_indicator.append(1)
+        else:
+            segment_indicator.append(0)
+
+    type_of_room_indicator.append(list(room_type.keys()).index(type_of_room_input))
+    return type_of_room_indicator + segment_indicator

@@ -6,18 +6,18 @@ import warnings
 warnings.filterwarnings("ignore")
 
 from generic_files.config import *
-from DQN.simulation_env import * 
-from DQN.deep_q_learning import *
+from DQN_seg.simulation_env import * 
+from DQN_seg.deep_q_learning import *
 from generic_files.utility_functions import *
 
 n_episodes = 1
-def run(n_customers,simulation_days, holiday_df, simulation_time,cancellation_rate,input_room_list, compare = False):
+def run(n_customers,simulation_days, simulation_time,cancellation_rate,input_room_list, compare = False):
     a = time.time()
     is_training = False
 
-    simu_env = Simulation_Env(n_customers, simulation_days, holiday_df, simulation_time,cancellation_rate,input_room_list, compare = compare)
+    simu_env = Simulation_Env(n_customers, simulation_days, simulation_time,cancellation_rate,input_room_list, compare = compare)
 
-    model = DQN(4+12, 5, observation_indexes= [0,1,3,6], is_training= is_training)
+    model = DQN(4+10, 5, observation_indexes= [0,1,3,6], is_training= is_training)
     
     total_reward = []
     epsilon_values = []

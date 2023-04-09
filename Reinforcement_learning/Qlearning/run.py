@@ -10,10 +10,10 @@ from Qlearning.q_learning import *
 from generic_files.utility_functions import *
 
 n_episodes = 4
-def run(n_customers,simulation_days, holiday_df, simulation_time, cancellation_rate,input_room_list, compare=False):
+def run(n_customers,simulation_days, simulation_time, cancellation_rate,input_room_list, compare=False):
     a = time.time()
 
-    simu_env = Simulation_Env(n_customers, simulation_days, holiday_df, simulation_time,cancellation_rate,input_room_list,compare= compare)
+    simu_env = Simulation_Env(n_customers, simulation_days, simulation_time,cancellation_rate,input_room_list,compare= compare)
     model = Q_Learning(simu_env.action_space.n, bin_numbers=[0,1], observation_indexes= [2,3])
 
     total_reward = []

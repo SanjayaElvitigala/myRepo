@@ -85,17 +85,16 @@ def prepare_dataframes(simulation_time,year_customers, hotel_obj,timesteps):
 
     metrics_df = df
     # making a dataframe for room price records
-    price_record_cols = [type_of_room+'_price' for type_of_room in room_type]
-    price_record_cols.append('segment')
+    price_record_cols = [type_of_room+'_price' for type_of_room in room_type]+ ['segment', 'booking_gap']
     hotel_room_price_records = pd.DataFrame( columns= price_record_cols)
 
     for day in range(simulation_time):
-        for segment in customer_segments:
-            row_dict = {type_of_room+'_price' : hotel_obj.room_price_records[type_of_room][segment][day] for type_of_room in room_type}
-            row_dict['segment'] = segment
-            row_dict['day'] = day
-            row = pd.Series(row_dict)
-            hotel_room_price_records = pd.concat([hotel_room_price_records, row.to_frame().T], ignore_index=True)
+            for lead_day in lead_time_days:
+                row_dict = {type_of_room+'_price' : hotel_obj.room_price_records[type_of_room][lead_day][day] for type_of_room in room_type}
+                row_dict['booking_gap'] = lead_day
+                row_dict['day'] = day
+                row = pd.Series(row_dict)
+                hotel_room_price_records = pd.concat([hotel_room_price_records, row.to_frame().T], ignore_index=True)
 
 
     booking_rec_df = pd.DataFrame({'Day' : timesteps, 
@@ -112,10 +111,10 @@ def prepare_dataframes(simulation_time,year_customers, hotel_obj,timesteps):
 
     return [customer_df ,metrics_df,booking_rec_df,booking_rec_df_melt,multi_hotels_stat,hotel_room_price_records]
 
-def summarize_metrics(hotel_obj,type_of_room, segment,time_step):
-    conv_cust = hotel_obj.converted_customers[type_of_room][segment][time_step] 
-    tot_cust = hotel_obj.total_customers[type_of_room][segment][time_step]
-    room_price = getattr(hotel_obj, (type_of_room + '_price'))[segment]
+def summarize_metrics(hotel_obj,type_of_room,lead_day,time_step):
+    conv_cust = hotel_obj.converted_customers[type_of_room][lead_day][time_step] 
+    tot_cust = hotel_obj.total_customers[type_of_room][lead_day][time_step]
+    room_price = getattr(hotel_obj, (type_of_room + '_price'))[lead_day]
     st_room_price = getattr(hotel_obj, (type_of_room + '_st_price'))
     room_cost = getattr(hotel_obj, (type_of_room + '_cost'))
     profit_per_room = (room_price - room_cost) if (room_price - room_cost)>0 else 0
@@ -237,30 +236,71 @@ def process_holiday_dataframe(holiday_df):
         current_date = inputs_df.iloc[index]['date']
         for segment in customer_segments:
             segment_value = inputs_df.iloc[index][segment]
-            holiday_df[segment][(pd.to_datetime(holiday_df['date']) == current_date)] = segment_value
+            holiday_df.loc[(pd.to_datetime(holiday_df['date']) == current_date), segment] = segment_value
 
     return holiday_df
 
-def unpack_reward(nested_reward_dict):
-    reward = 0
-    for key1, value1 in nested_reward_dict.items():
-        for key2,value2 in value1.items():
-            reward+=value2
-    return reward
+def unpack_reward(nested_reward):
+    reward_tracker = 0
+    for type_of_room, lead_days_dict in nested_reward.items():
+        for lead_day, reward in lead_days_dict.items():
+                reward_tracker+= reward
+    return reward_tracker
 
-def segment_room_type_label_encoder(segment_input ,type_of_room_input):
+def seg_rtype_Lday_label_encoder(lead_day_input,type_of_room_input):
     segment_indicator = []
     type_of_room_indicator = []
+    lead_day_indicator = []
 
-    for segment in customer_segments:
-        if segment==segment_input:
-            segment_indicator.append(1)
-        else:
-            segment_indicator.append(0)
+    # for segment in customer_segments:
+    #     if segment==segment_input:
+    #         segment_indicator.append(1)
+    #     else:
+    #         segment_indicator.append(0)
 
     for type_of_room in room_type:
         if type_of_room==type_of_room_input:
             type_of_room_indicator.append(1)
         else:
             type_of_room_indicator.append(0)
-    return type_of_room_indicator + segment_indicator
+    for lead_day in lead_time_days:
+        if lead_day==lead_day_input:
+            lead_day_indicator.append(1)
+        else:
+            lead_day_indicator.append(0)
+
+    return type_of_room_indicator + lead_day_indicator
+
+def action_index_map(type_of_room_in,segment_in,lead_day_in):
+    i = 0
+    index_dict = {}
+    for type_of_room in room_type:
+        index_dict[type_of_room] = {}
+        for segment in customer_segments:
+            index_dict[type_of_room][segment] = {}
+            for lead_day in lead_time_days:
+                    index_dict[type_of_room][segment][lead_day]= i
+                    i+=1
+    return index_dict[type_of_room_in][segment_in][lead_day_in]
+
+
+def check_data(hotel_obj, epi_num,simulation_time):
+      df = pd.DataFrame(columns =['room_type','booking_gap','tot_cust'])
+      for day in range(simulation_time):
+        for type_of_room in room_type:
+                for lead_day in lead_time_days:
+                    row_dict  = {'room_type':type_of_room, 'booking_gap': lead_day, 'tot_cust':hotel_obj.total_customers[type_of_room][lead_day][day]  }
+                    row_series = pd.Series(row_dict)
+                    df = pd.concat([df, row_series.to_frame().T], ignore_index=True)
+      df.to_excel(f'data{epi_num}.xlsx')
+
+def get_booking_gap_bin(booking_gap):
+    bin_identifier = 0
+    for lead_day in lead_time_days:
+        if booking_gap<lead_day:
+           bin_identifier = lead_time_days[lead_time_days.index(lead_day)-1]
+           break
+        elif booking_gap>=lead_time_days[-1]:
+            bin_identifier=lead_time_days[-1]
+
+    return bin_identifier

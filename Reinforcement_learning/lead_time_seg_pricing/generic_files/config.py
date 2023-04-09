@@ -3,6 +3,7 @@ import pandas as pd
 
 
 #customer segments and their price with discount
+lead_time_days  = [0,4,8]
 customer_segment_weights = [0.048, 0.140, 0.008, 0.048, 0.027, 0.070, 0.079, 0.021, 0.559] # customer segment ratio values from the synthetic dataset with the segment order in the dictionary
 customer_segments = {'Ret':{'price':1.0},
                     'Corp':{'price':0.9},

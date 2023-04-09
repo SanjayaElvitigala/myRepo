@@ -12,13 +12,12 @@ import pickle
 
 class Simulation_Env:
 
-    def __init__(self,n_customers,simulation_days, holiday_df, simulation_time,cancellation_rate,input_room_list, compare):
+    def __init__(self,n_customers,simulation_days, simulation_time,cancellation_rate,input_room_list, compare):
         self.compare = compare
         
         self.input_room_list = input_room_list
         self.simulation_time =simulation_time
         self.simulation_days = simulation_days
-        self.holiday_df = holiday_df
         
         self.n_customers = n_customers
         self.cancellation_rate = cancellation_rate
@@ -31,14 +30,11 @@ class Simulation_Env:
         next_state ={}
         reward = {}
         time_step = self.time_step
-
-        next_state = {}
-        reward = {}
         for type_of_room in room_type:
             segmentwise_obs = {}
             segmentwise_reward = {}
             for segment in customer_segments:
-                conv_cust, tot_cust, expect_total_profit, conversion, expected_ROI, room_price, room_cost, static_expect_total_profit = summarize_metrics(self.hotel, type_of_room, segment, time_step)
+                conv_cust, tot_cust, expect_total_profit, conversion, expected_ROI, room_price, room_cost, static_expect_total_profit = summarize_metrics(self.hotel, type_of_room, time_step, segment)
                 action = self.hotel.last_action_taken[type_of_room][segment]
                 metrics_needed = [tot_cust, conv_cust, expect_total_profit, action]
                 metrics_needed = metrics_needed+ segment_room_type_label_encoder(segment,type_of_room)
@@ -90,25 +86,30 @@ class Simulation_Env:
 
     def reset(self):
 
-        self.time_step = 0
+        self.time_step = -1* leadtime_up_lim
         if self.compare:
             with open("pickle_objects\hotel_objs.pkl", "rb") as inp1:   # Unpickling
                 self.hotels = pickle.load(inp1)
-            self.hotel = self.hotels[0]
 
+            for hotel in self.hotels: # changing the hotels for segment pricing, but actually segment pricing only happens in the RL hotel
+                hotel.switch_to_seg_pricing()
+
+            self.hotel = self.hotels[0]
             with open("pickle_objects\customer_handler_obj.pkl", "rb") as inp2:   # Unpickling
                 self.customer_handler = pickle.load(inp2)
         else:
-            self.hotels = [Hotel(self.simulation_time, self.input_room_list,i+1) for i in range(number_of_hotels)]
+            self.hotels = [Hotel(self.simulation_time, self.input_room_list,i+1, is_seg_pricing=True) for i in range(number_of_hotels)]
+            for hotel in self.hotels: # changing the hotels for segment pricing, but actually segment pricing only happens in the RL hotel
+                hotel.switch_to_seg_pricing()
             self.hotel = self.hotels[0]
-            self.customer_handler = Customer_Handler(self.n_customers, self.simulation_days, self.holiday_df)
+            self.customer_handler = Customer_Handler(self.n_customers, self.simulation_days)
             self.customer_handler.preparing_daily_customers()
 
         # self.base_hotel = deepcopy(self.hotel)
         self.base_hotels = deepcopy(self.hotels)
         self.base_customer_handler = deepcopy(self.customer_handler)
 
-        return {type_of_room: {segment: np.array([0,0,0,random.choice([0.95,0.975,1,1.025,1.05])] + [0 for i in range(len(room_type)+len(customer_segments))],dtype='float32') 
+        return {type_of_room: {segment: np.array([0,0,0,random.choice([0.95,0.975,1,1.025,1.05])] + [0 for i in range(1+len(customer_segments))],dtype='float32') 
                                for segment in customer_segments} for type_of_room in room_type}
 
 
@@ -116,8 +117,8 @@ class Simulation_Env:
 
         self.hotel.set_price(actions)
 
-        execute_logic(self.hotels, self.time_step, self.customer_handler.daily_search_day)
-        execute_logic(self.base_hotels, self.time_step, self.base_customer_handler.daily_search_day)
+        execute_logic(self.hotels, self.time_step, self.customer_handler.daily_search_day, is_seg_pricing = True)
+        execute_logic(self.base_hotels, self.time_step, self.base_customer_handler.daily_search_day, is_seg_pricing = True)
 
         next_state,reward = self.prepare_outputs()
 

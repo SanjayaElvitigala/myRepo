@@ -58,7 +58,7 @@ class DQN:
         
       else:
           self.main_model =DeepQNetwork(self.learning_rate,state_shape, action_shape, n_dense_1=50, n_dense_2=50)
-          self.main_model.load_state_dict(torch.load(f'DQN\models\model_seg.pkl'))
+          self.main_model.load_state_dict(torch.load(f'DQN_seg\models\model_seg_2.pkl'))
 
       self.target_model = DeepQNetwork(self.learning_rate, state_shape, action_shape, n_dense_1=50, n_dense_2=50)
       self.target_model.load_state_dict(self.main_model.state_dict())

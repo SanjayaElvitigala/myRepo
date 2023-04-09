@@ -1,4 +1,3 @@
-import os
 import streamlit as st
 import pandas as pd
 import seaborn as sns
@@ -11,6 +10,12 @@ from generic_files.hotel import *
 from generic_files.customer import *
 from generic_files.customer_handler import *
 from generic_files.utility_functions import *
+from generic_files.object_creation import *
+
+from DQN_seg import run as dqn_seg_run
+from DQN import run as dqn_run
+
+import pickle
 import plotly.express as px
 
 
@@ -27,46 +32,61 @@ st.write('***eg : if you put 5 as the value for a particular holiday and custome
 # strealit inputs
 col1,col2,col3,col4 = st.columns(4)
 with col1:
-        weekend_weight = st.number_input('Week end weight',step = 1, min_value = 1) 
+        weekend_weight = st.number_input('Week end weight',step = 1, min_value = 1)
 
-n_customers = st.sidebar.slider('Expected number of Customers' , 7500, 20000, 7500)
-start_date = st.sidebar.date_input('Start Date', value= dt.date(2023,1,1))
-end_date = st.sidebar.date_input('End Date', min_value =start_date+dt.timedelta(2), value= dt.date(2024,1,1))
+n_customers = st.sidebar.slider('Expected number of Customers' ,min_expected_cust, max_expected_cust, default_cust)
+start_date = st.sidebar.date_input('Start Date', value= default_start_date)
+end_date = st.sidebar.date_input('End Date', min_value =start_date+dt.timedelta(2), value= default_end_date)
 
 input_room_list=[]
 for i in room_type:
   name_room_count=i+'_count'
-  locals()[name_room_count]= st.sidebar.slider(name_room_count , 5, 50, 15)
+  locals()[name_room_count]= st.sidebar.slider(name_room_count , min_room_cnt, max_room_cnt, default_room_cnt)
   input_room_list.append(locals()[name_room_count])
 
 cancellation_rate = st.sidebar.slider("Cancellation Rate (%)", 0, 100, 0)
-model_name=st.sidebar.selectbox("Select Model",('DQN','PPO','Qlearning'))
-
 output_list = create_holiday_dataframe(start_date, end_date, weekend_weight)
 
+
+holiday_df = pd.read_csv("generic_files/h_df.csv")
+
 if 'holiday_df' not in st.session_state:
-      st.session_state['holiday_df'] = output_list[0] 
+      st.session_state['holiday_df'] = holiday_df
 default_holiday_df = st.session_state['holiday_df']
-  
-holiday_df = process_holiday_dataframe(default_holiday_df)
+
+process_holiday_dataframe(default_holiday_df)
 
 Simulate = st.button(label="Simulate")
 
-simulation_time = output_list[2]
-simulation_days = output_list[1]
+simulation_time = output_list[1]
+simulation_days = output_list[0] if is_simu_h_df else list(range(simulation_time))
 
-
-imported_module_run = __import__(model_name+'.run')
 
 if Simulate:
-  #, customer_df, rl_df[1], booking_rec_df, booking_rec_df_melt,arrival_df
-  reward_df, rl_df, base_df, arrival_df= imported_module_run.run.run(n_customers, simulation_days, holiday_df, simulation_time, cancellation_rate, input_room_list)
+  hotels, customer_handler =  create_objects(simulation_time, simulation_days, n_customers, input_room_list)
+  with open('pickle_objects\hotel_objs.pkl', 'wb') as outp:
+    hotel_objs = hotels
+    pickle.dump(hotel_objs, outp, pickle.HIGHEST_PROTOCOL)
+  with open('pickle_objects\customer_handler_obj.pkl', 'wb') as outp:
+    cust_handler_obj = customer_handler
+    pickle.dump(cust_handler_obj, outp, pickle.HIGHEST_PROTOCOL)
+
+  DQN_seg_reward_df, DQN_seg_rl_df, DQN_seg_base_df, DQN_seg_arrival_df= dqn_seg_run.run(n_customers, simulation_days, simulation_time,cancellation_rate,input_room_list, compare =True)
+  DQN_reward_df, DQN_rl_df, DQN_base_df, DQN_arrival_df= dqn_run.run(n_customers, simulation_days, simulation_time,cancellation_rate,input_room_list, compare =True)
+
   st.write(f"""
   Following data and visualisations is from a simulation of ***{n_customers} customers*** coming into a hotel  and attempting to book within a timeline of ***{simulation_time} days***.
   """)
 
+  #storing best Rl model data as rl_df
+  Total_profit_of_each_model=[DQN_seg_rl_df[1]['Profit'].sum(), DQN_rl_df[1]['Profit'].sum()]
+  max_value_index=Total_profit_of_each_model.index(max(Total_profit_of_each_model))
+  rl_df=[DQN_seg_rl_df,DQN_rl_df][max_value_index]
+  base_df = DQN_seg_base_df
+
   comparison_df=comparison_df(rl_df,base_df)
   distribution_df=distribution_df(rl_df,base_df)
+  model_comparison= model_comparison_seg(DQN_seg_rl_df,DQN_rl_df,base_df)
 
   rl_df[1]['cumulative_profit']=rl_df[1]['Profit'].cumsum()
   base_df[1]['cumulative_profit']=base_df[1]['Profit'].cumsum()
@@ -81,7 +101,26 @@ if Simulate:
   rl_df[2]['chain']='RL agent'
   base_df[2]['chain']='Base model'
   full_booking_rec_df=pd.concat([rl_df[2],base_df[2]])
-  
+
+  st.write('''### Comparison between models''')
+  fig=px.bar(model_comparison,x='Room_type',y=[ 'DQN_seg_agent_mean_occupancy_Rate',
+                                               'DQN_agent_mean_occupancy_Rate',
+                                               'Base_model_mean_occupancy_Rate'],
+                                               barmode='group',title='Mean occupancy rate by room type for each model')
+  st.plotly_chart(fig, use_container_width=True)
+
+  fig=px.bar(model_comparison,x='Room_type',y=['DQN_seg_agent_mean_revenue',
+                                                'DQN_agent_mean_revenue',
+                                                'Base_model_mean_revenue'],
+                                                barmode='group',title='Mean daily revenue by room type for each model')
+  st.plotly_chart(fig, use_container_width=True)
+
+  fig=px.bar(model_comparison,x='Room_type',y=['DQN_seg_agent_mean_profit',
+                                                'DQN_agent_mean_profit',
+                                                'Base_model_mean_profit'],
+                                                barmode='group',title='Mean daily profit by room type for each model')
+  st.plotly_chart(fig, use_container_width=True)
+
   fig = px.bar(comparison_df, x="Room_type", y=["RL_agent_mean_occupancy_rate",'Base_model_mean_occupancy_Rate'],barmode='group', title="Mean occupancy rate by room type")
   fig.update_layout(yaxis_title="Mean Occupancy Rate")
   st.plotly_chart(fig, use_container_width=True)
@@ -94,10 +133,14 @@ if Simulate:
   fig.update_layout(yaxis_title="Mean Daily Profit")
   st.plotly_chart(fig, use_container_width=True)
  
-  st.dataframe(rl_df[5])
-  for i in room_type:
-     fig=px.line(data_frame = rl_df[5], x = 'day' ,y=i+'_price',title=f'{i} price Change over time', color= 'segment')
-     st.plotly_chart(fig, use_container_width=True)
+  if rl_df[5].equals(DQN_seg_rl_df[5]):
+    for i in room_type:
+      fig=px.line(data_frame = rl_df[5], x = 'day' ,y=i+'_price',title=f'{i} price Change over time', color= 'segment')
+      st.plotly_chart(fig, use_container_width=True)
+  else:
+    for i in room_type:
+      fig=px.line(rl_df[5],y=i,title=f'{i} price Change over time')
+      st.plotly_chart(fig, use_container_width=True)
 
  
 
@@ -132,7 +175,7 @@ if Simulate:
   st.dataframe(distribution_df)
 
   st.write('''### Reward df''')
-  st.dataframe(reward_df)
+  # st.dataframe(reward_df)
 
 
 
@@ -164,10 +207,8 @@ if Simulate:
   st.dataframe(base_df[1])
 
   st.write('''### Arrival Distribution by day''')
-  st.dataframe(arrival_df)
-  st.write(arrival_df['Arrival_count'].sum())
+  st.dataframe(DQN_seg_arrival_df)
  
-
 
 
 else:

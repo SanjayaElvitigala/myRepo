@@ -1,39 +1,41 @@
 import random
 from generic_files.config import *
+from generic_files.utility_functions import *
 
 
 def execute_logic(hotels, timestep, daily_search_day_list):
 
         # recording the hotels sorted by price for each room type and by each segment
-        sorted_hotels_by_room_type_and_segment = {}
+        sorted_hotels_by_room_type_and_lead_day = {}
         for type_of_room in room_type:
-            segment_wise_sorted = {}
-            for segment in customer_segments:
-                segment_wise_sorted[segment] = sort_hotels_by_price(hotels, type_of_room,segment)
-            sorted_hotels_by_room_type_and_segment[type_of_room] = segment_wise_sorted
+            lead_day_wise_sorted = {}
+            for lead_day in lead_time_days:
+                    lead_day_wise_sorted[lead_day] = sort_hotels_by_price(hotels, type_of_room, lead_day)
+            sorted_hotels_by_room_type_and_lead_day[type_of_room] = lead_day_wise_sorted
             
 
         # recording hotel prices set on each day
         for hotel_obj in hotels:
             for type_of_room in room_type:
                 name_room_price = type_of_room + '_price'
-                for segment in customer_segments:
-                    hotel_obj.room_price_records[type_of_room][segment][timestep] = getattr(hotel_obj,name_room_price)[segment]
+                for lead_day in lead_time_days:
+                    hotel_obj.room_price_records[type_of_room][lead_day][timestep] = getattr(hotel_obj,name_room_price)[lead_day]
          
         for customer in daily_search_day_list[timestep]:
             r_type = customer.type # room type needed by the customer
-            segment = customer.segment # segment of the customer
+            # segment = customer.segment # segment of the customer
+            cust_lead_day = get_booking_gap_bin(customer.booking_gap) 
             name_room_price = r_type + '_price'
             name_room_cost = r_type + '_cost'
             
 
-            sorted_hotels = sorted_hotels_by_room_type_and_segment[r_type][segment]
+            sorted_hotels = sorted_hotels_by_room_type_and_lead_day[r_type][cust_lead_day]
             
             for hotel in sorted_hotels:
                 hotel_obj = hotel
-                hotel_obj.total_customers[r_type][segment][timestep]+=1
+                hotel_obj.total_customers[r_type][cust_lead_day][timestep]+=1
                 hotel_obj.daily_customers=+1
-                price_of_room = getattr(hotel_obj,name_room_price)[segment]
+                price_of_room = getattr(hotel_obj,name_room_price)[cust_lead_day]
                 booking_process_result = hotel_obj.process_booking(timestep, customer)
 
                 if booking_process_result == 4 : # Not today Customer
@@ -47,12 +49,12 @@ def execute_logic(hotels, timestep, daily_search_day_list):
                         customer.booking_fail(price_of_room, no_rooms =True)
 
                     elif booking_process_result == 1: # success
-                        hotel_obj.converted_customers[r_type][segment][timestep]+=1
+                        hotel_obj.converted_customers[r_type][cust_lead_day][timestep]+=1
                         hotel_obj.booked_customers[timestep] += 1
 
                         customer.update_booked_day(timestep)
                         customer.booking_success(price_of_room)
-                        hotel_obj.per_day_profit[customer.type][customer.segment] += price_of_room-getattr(hotel_obj,name_room_cost)
+                        hotel_obj.per_day_profit[r_type][cust_lead_day] += price_of_room-getattr(hotel_obj,name_room_cost)
                         break
 
                     elif booking_process_result == 3: # customer price too low
@@ -79,8 +81,10 @@ def execute_cancellation(cancellation_rate, year_customers, hotel_objs, timestep
                     cus.booking_cancel(timestep)
 
 
-def sort_hotels_by_price(hotels_list, type_of_room,segment):
+def sort_hotels_by_price(hotels_list, type_of_room, lead_day):
     room_price_str = type_of_room + '_price'
-    sorted_hotels_list = sorted(hotels_list, key=lambda x: getattr(x,room_price_str)[segment], reverse=False)
+    sorted_hotels_list = sorted(hotels_list, key=lambda x: getattr(x,room_price_str)[lead_day], reverse=False)
     return sorted_hotels_list
+
+
 

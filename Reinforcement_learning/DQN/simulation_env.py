@@ -12,13 +12,12 @@ import pickle
 
 class Simulation_Env:
 
-    def __init__(self,n_customers,simulation_days, holiday_df, simulation_time,cancellation_rate,input_room_list, compare):
+    def __init__(self,n_customers,simulation_days, simulation_time,cancellation_rate,input_room_list, compare):
         self.compare = compare
         
         self.input_room_list = input_room_list
         self.simulation_time =simulation_time
         self.simulation_days = simulation_days
-        self.holiday_df = holiday_df
         
         self.n_customers = n_customers
         self.cancellation_rate = cancellation_rate
@@ -62,7 +61,7 @@ class Simulation_Env:
 
     #   reward_tracker = conv_rewards + profit_rewards
     #   reward_tracker = round(reward_tracker) 
-      return self.hotel.per_day_profit[type_of_room]-self.base_hotels[0].per_day_profit[type_of_room] 
+      return self.hotel.per_day_profit-self.base_hotels[0].per_day_profit
     #   return reward_tracker
 
     def render(self):
@@ -82,7 +81,7 @@ class Simulation_Env:
 
     def reset(self):
 
-        self.time_step = 0
+        self.time_step = -1* leadtime_up_lim
         if self.compare:
             with open("pickle_objects\hotel_objs.pkl", "rb") as inp1:   # Unpickling
                 self.hotels = pickle.load(inp1)
@@ -93,7 +92,7 @@ class Simulation_Env:
         else:
             self.hotels = [Hotel(self.simulation_time, self.input_room_list,i+1) for i in range(number_of_hotels)]
             self.hotel = self.hotels[0]
-            self.customer_handler = Customer_Handler(self.n_customers, self.simulation_days, self.holiday_df)
+            self.customer_handler = Customer_Handler(self.n_customers, self.simulation_days)
             self.customer_handler.preparing_daily_customers()
 
         # self.base_hotel = deepcopy(self.hotel)
@@ -119,7 +118,7 @@ class Simulation_Env:
         done = False if self.time_step < (self.simulation_time-1) else True
 
         info = {}
-        self.hotel.per_day_profit = {type_of_room: 0 for type_of_room in room_type}
-        self.base_hotels[0].per_day_profit = {type_of_room: 0 for type_of_room in room_type}
+        self.hotel.per_day_profit = 0
+        self.base_hotels[0].per_day_profit = 0
         return next_state,reward,done,info
 

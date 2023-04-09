@@ -38,9 +38,9 @@ class DQN:
       self.rewards_mem = {type_of_room: [] for type_of_room in room_type}
       self.dones_mem = []
 
-      self.EPSILON = 0.6 if is_training else 0
+      self.EPSILON = 0.5 if is_training else 0
       self.epsilon_min = 0.01
-      self.epsilon_decay = 0.001
+      self.epsilon_decay = 0.01
       self.ALPHA = 0.05
       self.learning_rate = 0.001
       self.DISCOUNT = 0.95
@@ -55,9 +55,10 @@ class DQN:
 
       if is_training:
           self.main_model =DeepQNetwork(self.learning_rate,state_shape, action_shape, n_dense_1=100, n_dense_2=100)
+          self.main_model.load_state_dict(torch.load('DQN\models\model6 copy.pkl'))
       else:
           self.main_model =DeepQNetwork(self.learning_rate,state_shape, action_shape, n_dense_1=100, n_dense_2=100)
-          self.main_model.load_state_dict(torch.load('DQN\models\model6.pkl'))
+          self.main_model.load_state_dict(torch.load('DQN\models\model6 retrained.pkl'))
 
    
       self.target_model = DeepQNetwork(self.learning_rate, state_shape, action_shape, n_dense_1=100, n_dense_2=100)

@@ -14,8 +14,8 @@ class Customer:
   def __init__(self, id_num):
     self.segment = random.choice(self.customer_segment) # adding customer segment
 
-    self.room_value_appr = random.choice([random.uniform(1,1.15),1]) # to appreciate the value that the customer is willing to pay if a booking attempt was not successfull
-    self.stay_duration_place_holder = np.random.poisson(2.206)
+    self.room_value_appr = random.choice([random.uniform(rvalue_appr_low_lim, rvalue_appr_up_lim), rvalue_appr_low_lim]) # to appreciate the value that the customer is willing to pay if a booking attempt was not successfull
+    self.stay_duration_place_holder = np.random.poisson(stay_dur_lambda)
     self.stay_duration = self.stay_duration_place_holder if self.stay_duration_place_holder!=0 else 1  # stay duration for the customer from the stay day
     
     # randomizing customer room selection
@@ -28,7 +28,7 @@ class Customer:
     self.actual_hotel_price = np.nan
   
     self.stay_day = np.nan  # 0 is the 1st day of the month and 30th is the 31st of the month, this was done due python having 0 as the starting index
-    self.booking_gap = random.randint(4,14)
+    self.booking_gap = random.randint(leadtime_low_lim,leadtime_up_lim)
     self.initial_search_day = np.nan # searching day prior to the actual needed stay date
     self.search_day = np.nan # placeholder to update the search day if initial attempt fails
     self.booked_day = np.nan
@@ -76,7 +76,8 @@ class Customer:
     self.booking_cancelled = 1
     self.cancelled_day = day
 
-  def initiate_stay_day(self, day):
+  def initiate_stay_day(self, day, boost_rate):
+    self.room_value*=boost_rate
     self.stay_day = day
 
   def initiate_search_day(self, day):
