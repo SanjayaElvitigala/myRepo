@@ -55,7 +55,7 @@ seaborn==0.12.1
 semver==3.0.2
 six==1.16.0
 smmap==5.0.1
-streamlit==1.15.1
+streamlit==1.29.0
 streamlit-aggrid==0.3.4.post3
 tenacity==8.2.3
 threadpoolctl==3.2.0

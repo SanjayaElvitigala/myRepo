@@ -1,8 +1,10 @@
-FROM python:3.10
+FROM python:3.10-slim
 
 WORKDIR /containerized_RL
 
-COPY requirements.txt .
+COPY requirements.txt ./requirements.txt
 COPY ./files ./files
 RUN pip install -r requirements.txt
-CMD [ "streamlit", "run", './files/Streamlit.py && ./files/Streamlit_multi_seg.py' ]
+WORKDIR /containerized_RL/files
+EXPOSE 8501
+ENTRYPOINT ["streamlit", "run", 'Streamlit.py']
